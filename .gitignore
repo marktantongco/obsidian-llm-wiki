@@ -1,0 +1,17 @@
+.env
+node_modules/
+dist/
+.env-tokens/
+vault/.obsidian/workspace*.json
+vault/.obsidian/hotkeys.json
+vault/.obsidian/appearance.json
+orchestrator/dist/
+orchestrator/node_modules/
+*.log
+/tmp/
+.DS_Store
+qdrant_storage/
+anythingllm_storage/
+khoj_data/
+khoj_db_data/
+orchestrator_data/

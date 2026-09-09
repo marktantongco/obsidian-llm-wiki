@@ -1,0 +1,119 @@
+# Obsidian × LLM Wiki Ecosystem — Unified Stack
+# Vault-native (Copilot/Smart Connections) + External RAG (AnythingLLM) + Hybrid (Khoj) + Custom Orchestrator
+# Next step: docker compose up -d && ./scripts/setup.sh
+
+services:
+  # --- Vector DB: Qdrant (shared by orchestrator + Khoj) ---
+  qdrant:
+    image: qdrant/qdrant:v1.12.1
+    container_name: obsidian-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "true"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --- External RAG Engine: AnythingLLM ---
+  # Point it at ./vault — full RAG pipeline + multi-LLM routing
+  anythingllm:
+    image: mintplexlabs/anythingllm:master
+    container_name: obsidian-anythingllm
+    ports:
+      - "3002:3001"
+    volumes:
+      - anythingllm_storage:/app/server/storage
+      - anythingllm_hotdir:/app/collector/hotdir
+      - ../obsidian-llm-wiki/vault:/app/vault:ro # vault ingest
+      - ./vault:/app/vault:ro
+    environment:
+      - STORAGE_DIR=/app/server/storage
+    cap_add:
+      - SYS_ADMIN
+    restart: unless-stopped
+    depends_on:
+      qdrant:
+        condition: service_healthy
+
+  khoj-db:
+    image: pgvector/pgvector:pg16
+    container_name: obsidian-khoj-db
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - khoj_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # --- Hybrid: Khoj (Obsidian plugin + RAG server) ---
+  khoj:
+    image: ghcr.io/khoj-ai/khoj:latest
+    container_name: obsidian-khoj
+    ports:
+      - "42110:42110"
+    volumes:
+      - khoj_data:/app/.khoj
+      - ./vault:/app/vault:ro
+      - ../obsidian-llm-wiki/vault:/app/vault:ro
+    environment:
+      - KHOJ_DJANGO_SECRET_KEY=${KHOJ_SECRET:-change-me-in-env}
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - KHOJ_ADMIN_EMAIL=admin@example.com
+      - KHOJ_ADMIN_PASSWORD=admin123
+      - POSTGRES_HOST=khoj-db
+      - POSTGRES_PORT=5432
+    restart: unless-stopped
+    depends_on:
+      khoj-db:
+        condition: service_healthy
+    command: ["--host", "0.0.0.0", "--port", "42110", "--anonymous-mode"]
+
+  # --- Custom Orchestrator (Contrarian lane: Local REST API + chunking + routing) ---
+  # Built from ./orchestrator/Dockerfile, talks to Qdrant + Ollama + Claude/Codex
+  orchestrator:
+    profiles: ["docker-orchestrator"]
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile
+    container_name: obsidian-orchestrator
+    ports:
+      - "8790:8787"
+    volumes:
+      - ./vault:/app/vault:ro
+      - ../obsidian-llm-wiki/vault:/app/vault:ro
+      - orchestrator_data:/app/data
+    environment:
+      - PORT=8787
+      - QDRANT_URL=http://qdrant:6333
+      - OLLAMA_URL=http://host.docker.internal:11434
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OBSIDIAN_REST_API_URL=${OBSIDIAN_REST_API_URL:-http://host.docker.internal:27123}
+      - OBSIDIAN_REST_API_KEY=${OBSIDIAN_REST_API_KEY:-}
+      - VAULT_PATH=/app/vault
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  qdrant_storage:
+  anythingllm_storage:
+  anythingllm_hotdir:
+  khoj_data:
+  khoj_db_data:
+  orchestrator_data:
