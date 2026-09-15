@@ -33,6 +33,8 @@ services:
       - ./vault:/app/vault:ro
     environment:
       - STORAGE_DIR=/app/server/storage
+      - AUTH_TOKEN=${ANYTHINGLLM_AUTH_TOKEN}
+      - JWT_SECRET=${ANYTHINGLLM_JWT_SECRET}
     cap_add:
       - SYS_ADMIN
     restart: unless-stopped
@@ -70,15 +72,15 @@ services:
       - POSTGRES_DB=postgres
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
-      - KHOJ_ADMIN_EMAIL=admin@example.com
-      - KHOJ_ADMIN_PASSWORD=admin123
+      - KHOJ_ADMIN_EMAIL=${KHOJ_ADMIN_EMAIL}
+      - KHOJ_ADMIN_PASSWORD=${KHOJ_ADMIN_PASSWORD}
       - POSTGRES_HOST=khoj-db
       - POSTGRES_PORT=5432
     restart: unless-stopped
     depends_on:
       khoj-db:
         condition: service_healthy
-    command: ["--host", "0.0.0.0", "--port", "42110", "--anonymous-mode"]
+    command: ["--host", "0.0.0.0", "--port", "42110"]
 
   # --- Custom Orchestrator (Contrarian lane: Local REST API + chunking + routing) ---
   # Built from ./orchestrator/Dockerfile, talks to Qdrant + Ollama + Claude/Codex
